@@ -1,7 +1,10 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
-import * as d3 from 'd3';
+import React, { useEffect, useRef, useState } from 'react';
+import * as d3Base from 'd3';
 import { NodeData, LinkData, NodeType } from '../types';
-import { MousePointer2, AlertCircle } from 'lucide-react';
+import { MousePointer2, AlertCircle, ZoomIn, ZoomOut, Maximize } from 'lucide-react';
+
+// Workaround for d3 types issues
+const d3 = d3Base as any;
 
 interface GraphCanvasProps {
   nodes: NodeData[];
@@ -22,30 +25,48 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({
 }) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
-  const simulationRef = useRef<d3.Simulation<NodeData, LinkData> | null>(null);
+  const containerRef = useRef<SVGGElement>(null); // The group that gets transformed
+  const simulationRef = useRef<any | null>(null);
+  const zoomRef = useRef<any | null>(null);
+  
   const [sourceNode, setSourceNode] = useState<string | null>(null);
 
-  // Initialize simulation
+  // Initialize Zoom & Simulation
   useEffect(() => {
-    if (!wrapperRef.current) return;
+    if (!wrapperRef.current || !svgRef.current || !containerRef.current) return;
 
     const width = wrapperRef.current.clientWidth;
     const height = wrapperRef.current.clientHeight;
 
-    const simulation = d3.forceSimulation<NodeData, LinkData>(nodes)
-      .force("link", d3.forceLink<NodeData, LinkData>(links).id(d => d.id).distance(150))
-      .force("charge", d3.forceManyBody().strength(-400))
-      .force("center", d3.forceCenter(width / 2, height / 2))
-      .force("collide", d3.forceCollide().radius(60));
+    // 1. Setup Zoom
+    const zoom = d3.zoom()
+      .scaleExtent([0.1, 4])
+      .on("zoom", (event: any) => {
+        d3.select(containerRef.current).attr("transform", event.transform);
+      });
+    
+    zoomRef.current = zoom;
+    d3.select(svgRef.current).call(zoom).on("dblclick.zoom", null); // Disable double click zoom
+
+    // Center initial view
+    const initialTransform = d3.zoomIdentity.translate(width/2, height/2).scale(1);
+    d3.select(svgRef.current).call(zoom.transform, initialTransform);
+
+    // 2. Setup Simulation
+    const simulation = d3.forceSimulation(nodes)
+      .force("link", d3.forceLink(links).id((d: any) => d.id).distance(180))
+      .force("charge", d3.forceManyBody().strength(-500)) // Repulsion
+      .force("collide", d3.forceCollide().radius(70)) // Prevent overlap
+      .force("x", d3.forceX(0).strength(0.05)) // Gentle pull to center horizontal
+      .force("y", d3.forceY(0).strength(0.05)); // Gentle pull to center vertical
 
     simulationRef.current = simulation;
 
-    // Cleanup
     return () => {
       simulation.stop();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Run once on mount to setup
+  }, []); 
 
   // Update simulation when data changes
   useEffect(() => {
@@ -53,30 +74,27 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({
 
     const simulation = simulationRef.current;
     
-    // Update nodes and links
+    // Maintain existing node positions if they exist to prevent jumping
     simulation.nodes(nodes);
-    const linkForce = simulation.force("link") as d3.ForceLink<NodeData, LinkData>;
+    const linkForce = simulation.force("link") as any;
     linkForce.links(links);
     
-    // Reheat simulation
     simulation.alpha(1).restart();
   }, [nodes, links]);
 
-  // Render loop using a tick handler that updates React state or DOM directly
-  // Here we use D3 to update the DOM for performance
+  // Render Loop & Drag Logic
   useEffect(() => {
-    if (!simulationRef.current || !svgRef.current) return;
+    if (!simulationRef.current || !containerRef.current) return;
 
-    const svg = d3.select(svgRef.current);
+    const container = d3.select(containerRef.current);
     const simulation = simulationRef.current;
 
-    // Groups
-    const linkGroup = svg.select(".links");
-    const nodeGroup = svg.select(".nodes");
+    const linkGroup = container.select(".links");
+    const nodeGroup = container.select(".nodes");
 
-    // Draw Links
-    const linkSelection = linkGroup.selectAll<SVGLineElement, LinkData>("line")
-      .data(links, d => `${(d.source as NodeData).id}-${(d.target as NodeData).id}`);
+    // --- Draw Links ---
+    const linkSelection = linkGroup.selectAll("line")
+      .data(links, (d: any) => `${(d.source as NodeData).id}-${(d.target as NodeData).id}`);
 
     linkSelection.exit().remove();
 
@@ -87,9 +105,9 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({
 
     const allLinks = linkEnter.merge(linkSelection);
 
-    // Draw Nodes (Using foreignObject for HTML content)
-    const nodeSelection = nodeGroup.selectAll<SVGForeignObjectElement, NodeData>("foreignObject")
-      .data(nodes, d => d.id);
+    // --- Draw Nodes ---
+    const nodeSelection = nodeGroup.selectAll("foreignObject")
+      .data(nodes, (d: any) => d.id);
 
     nodeSelection.exit().remove();
 
@@ -98,7 +116,6 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({
       .attr("height", 80)
       .attr("overflow", "visible");
       
-    // Append the div inside
     nodeEnter.append("xhtml:div")
       .style("width", "100%")
       .style("height", "100%")
@@ -110,7 +127,7 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({
 
     // Update Node Content
     allNodes.select("div")
-      .html(d => {
+      .html((d: any) => {
         let bgColor = "bg-slate-800";
         let borderColor = "border-slate-600";
         
@@ -119,11 +136,8 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({
         if (d.type === NodeType.CONCEPT) { bgColor = "bg-pink-950"; borderColor = "border-pink-500"; }
         if (d.type === NodeType.ROADMAP) { bgColor = "bg-yellow-950"; borderColor = "border-yellow-500"; }
         
-        // Highlight logic for connection mode
         const isSelected = d.id === sourceNode;
         const ring = isSelected ? "ring-2 ring-white" : "";
-
-        // Icon based on type (simplified)
         const label = `<span class="text-xs font-bold text-center line-clamp-2 px-2">${d.label}</span>`;
         const typeLabel = `<span class="absolute -top-2 left-2 text-[10px] uppercase bg-slate-900 px-1 text-slate-400 border border-slate-700 rounded">${d.role || d.type}</span>`;
         
@@ -136,18 +150,18 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({
         `;
       });
 
-    // Drag Behavior
-    const drag = d3.drag<SVGForeignObjectElement, NodeData>()
-      .on("start", (event, d) => {
+    // --- Drag Behavior ---
+    const drag = d3.drag()
+      .on("start", (event: any, d: any) => {
         if (!event.active) simulation.alphaTarget(0.3).restart();
         d.fx = d.x;
         d.fy = d.y;
       })
-      .on("drag", (event, d) => {
+      .on("drag", (event: any, d: any) => {
         d.fx = event.x;
         d.fy = event.y;
       })
-      .on("end", (event, d) => {
+      .on("end", (event: any, d: any) => {
         if (!event.active) simulation.alphaTarget(0);
         d.fx = null;
         d.fy = null;
@@ -155,10 +169,9 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({
 
     allNodes.call(drag);
 
-    // Click Handlers
-    allNodes.on("click", (event, d) => {
-      // If dragging, don't trigger click
-      if (event.defaultPrevented) return;
+    // --- Click Handlers ---
+    allNodes.on("click", (event: any, d: any) => {
+      if (event.defaultPrevented) return; // Ignore drag end clicks
 
       if (connectionMode) {
         if (!sourceNode) {
@@ -169,7 +182,7 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({
             setSourceNode(null);
             setConnectionMode(false);
           } else {
-            setSourceNode(null); // Deselect if clicking same
+            setSourceNode(null);
           }
         }
       } else {
@@ -177,25 +190,72 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({
       }
     });
 
-    // Simulation Tick
+    // --- Tick ---
     simulation.on("tick", () => {
       allLinks
-        .attr("x1", d => (d.source as NodeData).x!)
-        .attr("y1", d => (d.source as NodeData).y!)
-        .attr("x2", d => (d.target as NodeData).x!)
-        .attr("y2", d => (d.target as NodeData).y!);
+        .attr("x1", (d: any) => (d.source as NodeData).x!)
+        .attr("y1", (d: any) => (d.source as NodeData).y!)
+        .attr("x2", (d: any) => (d.target as NodeData).x!)
+        .attr("y2", (d: any) => (d.target as NodeData).y!);
 
       allNodes
-        .attr("x", d => d.x! - 70) // Center offset (width/2)
-        .attr("y", d => d.y! - 40); // Center offset (height/2)
+        .attr("x", (d: any) => d.x! - 70) 
+        .attr("y", (d: any) => d.y! - 40);
     });
 
   }, [nodes, links, connectionMode, sourceNode, onNodeClick, onConnect, setConnectionMode]);
 
+  // View Controls
+  const handleZoomIn = () => {
+    if (svgRef.current && zoomRef.current) {
+      d3.select(svgRef.current).transition().call(zoomRef.current.scaleBy, 1.2);
+    }
+  };
+
+  const handleZoomOut = () => {
+    if (svgRef.current && zoomRef.current) {
+      d3.select(svgRef.current).transition().call(zoomRef.current.scaleBy, 0.8);
+    }
+  };
+
+  const handleFitView = () => {
+    if (!svgRef.current || !zoomRef.current || nodes.length === 0) return;
+    
+    const svg = d3.select(svgRef.current);
+    const width = wrapperRef.current?.clientWidth || 800;
+    const height = wrapperRef.current?.clientHeight || 600;
+    const padding = 100;
+
+    // Calculate bounds
+    const xMin = d3.min(nodes, (d: any) => d.x!) || 0;
+    const xMax = d3.max(nodes, (d: any) => d.x!) || 0;
+    const yMin = d3.min(nodes, (d: any) => d.y!) || 0;
+    const yMax = d3.max(nodes, (d: any) => d.y!) || 0;
+
+    const graphWidth = xMax - xMin;
+    const graphHeight = yMax - yMin;
+    const midX = (xMin + xMax) / 2;
+    const midY = (yMin + yMax) / 2;
+
+    if (graphWidth === 0 || graphHeight === 0) return;
+
+    const scale = Math.min(
+      (width - padding) / graphWidth,
+      (height - padding) / graphHeight,
+      1.5 // Max scale cap
+    );
+
+    const transform = d3.zoomIdentity
+      .translate(width / 2, height / 2)
+      .scale(scale)
+      .translate(-midX, -midY);
+
+    svg.transition().duration(750).call(zoomRef.current.transform, transform);
+  };
 
   return (
     <div className="flex-1 relative bg-slate-950 overflow-hidden" ref={wrapperRef}>
-       {/* Canvas Controls */}
+       {/* Info Panel */}
        <div className="absolute top-4 left-4 z-10 flex gap-2">
          <div className="bg-slate-900/80 backdrop-blur border border-slate-700 p-2 rounded-md shadow-lg text-xs text-slate-400">
             {nodes.length} Nodes • {links.length} Links
@@ -212,7 +272,14 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({
          </button>
        </div>
 
-      {/* Helper message for connection mode */}
+       {/* View Controls */}
+       <div className="absolute bottom-6 left-6 z-10 flex flex-col gap-2 bg-slate-900/80 backdrop-blur border border-slate-700 p-1.5 rounded-md shadow-lg">
+         <button onClick={handleZoomIn} className="p-2 hover:bg-slate-700 rounded text-slate-300" title="Zoom In"><ZoomIn size={18}/></button>
+         <button onClick={handleZoomOut} className="p-2 hover:bg-slate-700 rounded text-slate-300" title="Zoom Out"><ZoomOut size={18}/></button>
+         <button onClick={handleFitView} className="p-2 hover:bg-slate-700 rounded text-slate-300" title="Fit to Screen"><Maximize size={18}/></button>
+       </div>
+
+      {/* Helper message */}
       {connectionMode && (
          <div className="absolute top-16 left-4 z-10 bg-cyan-900/80 border border-cyan-500 text-cyan-100 px-3 py-2 rounded-md text-xs flex items-center gap-2 shadow-xl animate-in fade-in slide-in-from-top-2">
             <AlertCircle size={14} />
@@ -224,8 +291,10 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({
 
       {/* SVG Canvas */}
       <svg ref={svgRef} className="w-full h-full cursor-grab active:cursor-grabbing">
-        <g className="links"></g>
-        <g className="nodes"></g>
+        <g ref={containerRef}>
+          <g className="links"></g>
+          <g className="nodes"></g>
+        </g>
       </svg>
     </div>
   );

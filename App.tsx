@@ -60,7 +60,7 @@ const App: React.FC = () => {
     setStatusMessage('Session reset.');
     setConnectionMode(false);
     setUserRole('');
-    setAvailableExperts(DEFAULT_EXPERTS); // Reset custom experts too? Maybe keep them? Let's reset for full clean state.
+    setAvailableExperts(DEFAULT_EXPERTS);
     setResetKey(prev => prev + 1);
   };
 
@@ -70,14 +70,14 @@ const App: React.FC = () => {
     setIsProcessing(true);
     setStatusMessage('Gatekeeper is distilling core principle...');
     
-    // Create User Node
+    // Create User Node at origin (0,0) - D3 Center will handle this
     const userId = 'user-input';
     addNode({
       id: userId,
       type: NodeType.USER_INPUT,
       label: 'Core Topic',
       content: `${role}'s Topic: ${userInput}`,
-      x: 0, y: 0
+      x: -100, y: 0 // Explicit start
     });
 
     try {
@@ -89,7 +89,7 @@ const App: React.FC = () => {
         type: NodeType.GATEKEEPER,
         label: 'Core Principle',
         content: principle,
-        x: 100, y: 0
+        x: 100, y: 0 // Spawn to right of user input
       });
 
       addLink(userId, gatekeeperId);
@@ -110,7 +110,7 @@ const App: React.FC = () => {
       const newExpert: ExpertDefinition = {
         id: `exp-${Date.now()}`,
         role: role,
-        color: 'bg-indigo-600', // Default color for custom
+        color: 'bg-indigo-600',
         systemPrompt: systemPrompt
       };
       setAvailableExperts(prev => [...prev, newExpert]);
@@ -125,19 +125,21 @@ const App: React.FC = () => {
   // 2b. Add Expert to Workspace
   const handleAddExpert = (expert: ExpertDefinition) => {
     const id = `expert-${Date.now()}`;
+    // Spawn somewhat randomly around center to avoid stacking, but not too far
     addNode({
       id,
       type: NodeType.EXPERT,
       label: expert.role,
       content: expert.systemPrompt || `You are a ${expert.role}.`,
       role: expert.role,
-      x: Math.random() * 200, y: Math.random() * 200
+      x: (Math.random() - 0.5) * 100, 
+      y: (Math.random() - 0.5) * 100 + 150 // Spawn slightly below center
     });
     setStatusMessage(`${expert.role} spawned. Link to Gatekeeper to brainstorm.`);
     setConnectionMode(true);
   };
 
-  // 3. Connect Flow (Triggering Expert Analysis)
+  // 3. Connect Flow
   const handleConnect = async (sourceId: string, targetId: string) => {
     addLink(sourceId, targetId);
     setConnectionMode(false); 
@@ -146,7 +148,6 @@ const App: React.FC = () => {
     const target = nodes.find(n => n.id === targetId);
     if (!source || !target) return;
 
-    // Detect Gatekeeper <-> Expert connection regardless of direction
     let gatekeeper: NodeData | undefined;
     let expert: NodeData | undefined;
 
@@ -158,7 +159,6 @@ const App: React.FC = () => {
       expert = source;
     }
 
-    // Gatekeeper <-> Expert Logic
     if (gatekeeper && expert) {
       setIsProcessing(true);
       setStatusMessage(`${expert.role} is searching for connections...`);
@@ -166,12 +166,17 @@ const App: React.FC = () => {
       try {
         const expertDef = availableExperts.find(e => e.role === expert!.role) || { systemPrompt: expert.content };
         
-        // Step 1: Brainstorm 3 topics via Search
+        // Step 1: Brainstorm
         const brainstorm = await getExpertBrainstorm(gatekeeper.content, expert.role || 'Expert', expertDef.systemPrompt || '');
         
-        // Step 2 & 3: Generate content and image for each topic
+        // Step 2: Generate nodes
         let count = 0;
-        for (const topic of brainstorm.topics.slice(0, 3)) { // Limit to 3
+        
+        // Get fresh reference to Expert's position to spawn children nearby
+        const currentExpertX = expert.x || 0;
+        const currentExpertY = expert.y || 0;
+
+        for (const topic of brainstorm.topics.slice(0, 3)) {
           count++;
           setStatusMessage(`${expert.role}: Expanding topic ${count}/3 ("${topic.title}")...`);
           
@@ -179,6 +184,8 @@ const App: React.FC = () => {
           const imageBase64 = await generateConceptImage(content.imagePrompt);
 
           const conceptId = `concept-${Date.now()}-${count}`;
+          
+          // Spawn logic: Fan out below the expert
           addNode({
             id: conceptId,
             type: NodeType.CONCEPT,
@@ -187,11 +194,10 @@ const App: React.FC = () => {
             role: expert.role,
             image: imageBase64,
             selectedForRoadmap: false,
-            x: (expert.x || 0) + (Math.random() * 200 - 100),
-            y: (expert.y || 0) + 100 + (count * 50)
+            x: currentExpertX + (count * 100 - 200), // Fan out horizontally relative to expert
+            y: currentExpertY + 150 // Below expert
           });
 
-          // Link NEW Topic Node to the CORE PRINCIPLE (Gatekeeper) as requested
           addLink(gatekeeper.id, conceptId);
         }
 
@@ -233,10 +239,9 @@ const App: React.FC = () => {
         type: NodeType.ROADMAP,
         label: 'Research Roadmap',
         content: roadmapText,
-        x: 0, y: 400
+        x: 0, y: 300 // Spawn generally at bottom
       });
 
-      // Link selected concepts to roadmap
       selectedNodes.forEach(c => addLink(c.id, roadmapId));
       setStatusMessage('Roadmap generated.');
 
