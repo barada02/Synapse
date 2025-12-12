@@ -6,7 +6,7 @@ interface NodeCardProps {
   node: NodeData;
   onClose: () => void;
   onToggleSelection: (id: string) => void;
-  onDeepDive?: (id: string) => void; // Optional for backward compatibility, but we use it
+  onDeepDive?: (id: string) => void;
   isProcessing?: boolean;
 }
 
@@ -23,6 +23,51 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, onClose, onToggleSelection, o
       if (node.type === NodeType.CONCEPT) return 'bg-pink-500';
       if (node.type === NodeType.ROADMAP) return 'bg-yellow-500';
       return 'bg-slate-500';
+  };
+
+  // Simple Markdown Parser
+  const renderMarkdown = (content: string, isCompact: boolean = false) => {
+    // Helper for inline styles (bold, italic)
+    const parseInline = (text: string) => {
+      return text
+        .replace(/\*\*(.*?)\*\*/g, '<strong class="text-cyan-300 font-bold">$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em class="text-slate-400">$1</em>')
+        .replace(/`(.*?)`/g, '<code class="bg-slate-800 px-1 py-0.5 rounded text-xs font-mono text-cyan-200">$1</code>');
+    };
+
+    const lines = content.split('\n');
+    let html = '';
+
+    lines.forEach(line => {
+      const trimmed = line.trim();
+      
+      if (!trimmed) {
+        html += `<div class="${isCompact ? 'h-2' : 'h-4'}"></div>`;
+        return;
+      }
+
+      // Headers
+      if (trimmed.startsWith('# ')) {
+        html += `<h1 class="${isCompact ? 'text-lg' : 'text-2xl'} font-bold text-white mt-4 mb-2 border-b border-slate-700 pb-2">${parseInline(trimmed.slice(2))}</h1>`;
+      } else if (trimmed.startsWith('## ')) {
+        html += `<h2 class="${isCompact ? 'text-base' : 'text-xl'} font-bold text-white mt-3 mb-2">${parseInline(trimmed.slice(3))}</h2>`;
+      } else if (trimmed.startsWith('### ')) {
+        html += `<h3 class="${isCompact ? 'text-sm' : 'text-lg'} font-semibold text-cyan-100 mt-2 mb-1">${parseInline(trimmed.slice(4))}</h3>`;
+      } 
+      // Lists
+      else if (trimmed.startsWith('* ') || trimmed.startsWith('- ')) {
+        html += `<div class="flex gap-2 ${isCompact ? 'ml-2 mb-1' : 'ml-4 mb-1'} text-slate-300">
+                  <span class="text-cyan-500 select-none">•</span>
+                  <span>${parseInline(trimmed.slice(2))}</span>
+                 </div>`;
+      }
+      // Regular text
+      else {
+        html += `<p class="mb-1 text-slate-300 leading-relaxed">${parseInline(trimmed)}</p>`;
+      }
+    });
+
+    return html;
   };
 
   // --- MODAL VIEW (Expanded) ---
@@ -80,10 +125,7 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, onClose, onToggleSelection, o
               <div className={`flex-1 min-w-0 ${isImageNode && node.image ? 'lg:w-1/2' : 'w-full'}`}>
                 <div className="prose prose-invert prose-lg max-w-none text-slate-300">
                   {node.type === NodeType.ROADMAP || node.isDeepDived ? (
-                    // Render HTML/Markdown-ish content (simple replace for newlines)
-                    // If deep dived, it will contain markdown headers which simple replacement handles poorly but is legible
-                    // For better markdown support we'd use a library, but text-replacement serves the MVP
-                    <div dangerouslySetInnerHTML={{ __html: node.content.replace(/\n/g, '<br/>').replace(/### (.*)/g, '<h3 class="text-xl font-bold text-white mt-6 mb-2">$1</h3>') }} />
+                    <div dangerouslySetInnerHTML={{ __html: renderMarkdown(node.content) }} />
                   ) : (
                     <p className="whitespace-pre-wrap leading-relaxed">{node.content}</p>
                   )}
@@ -180,7 +222,7 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, onClose, onToggleSelection, o
         {/* Text */}
         <div className="prose prose-invert prose-sm max-w-none text-slate-300">
           {node.type === NodeType.ROADMAP || node.isDeepDived ? (
-            <div dangerouslySetInnerHTML={{ __html: node.content.replace(/\n/g, '<br/>').replace(/### (.*)/g, '<h3 class="text-sm font-bold text-white mt-4 mb-1 border-t border-slate-700 pt-2">$1</h3>') }} />
+            <div dangerouslySetInnerHTML={{ __html: renderMarkdown(node.content, true) }} />
           ) : (
             <p className="whitespace-pre-wrap">{node.content}</p>
           )}
