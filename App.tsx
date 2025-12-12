@@ -146,24 +146,36 @@ const App: React.FC = () => {
     const target = nodes.find(n => n.id === targetId);
     if (!source || !target) return;
 
-    // Gatekeeper (Source) -> Expert (Target) Logic
+    // Detect Gatekeeper <-> Expert connection regardless of direction
+    let gatekeeper: NodeData | undefined;
+    let expert: NodeData | undefined;
+
     if (source.type === NodeType.GATEKEEPER && target.type === NodeType.EXPERT) {
+      gatekeeper = source;
+      expert = target;
+    } else if (target.type === NodeType.GATEKEEPER && source.type === NodeType.EXPERT) {
+      gatekeeper = target;
+      expert = source;
+    }
+
+    // Gatekeeper <-> Expert Logic
+    if (gatekeeper && expert) {
       setIsProcessing(true);
-      setStatusMessage(`${target.role} is searching for connections...`);
+      setStatusMessage(`${expert.role} is searching for connections...`);
       
       try {
-        const expertDef = availableExperts.find(e => e.role === target.role) || { systemPrompt: target.content };
+        const expertDef = availableExperts.find(e => e.role === expert!.role) || { systemPrompt: expert.content };
         
         // Step 1: Brainstorm 3 topics via Search
-        const brainstorm = await getExpertBrainstorm(source.content, target.role || 'Expert', expertDef.systemPrompt || '');
+        const brainstorm = await getExpertBrainstorm(gatekeeper.content, expert.role || 'Expert', expertDef.systemPrompt || '');
         
         // Step 2 & 3: Generate content and image for each topic
         let count = 0;
         for (const topic of brainstorm.topics.slice(0, 3)) { // Limit to 3
           count++;
-          setStatusMessage(`${target.role}: Expanding topic ${count}/3 ("${topic.title}")...`);
+          setStatusMessage(`${expert.role}: Expanding topic ${count}/3 ("${topic.title}")...`);
           
-          const content = await generateTopicContent(topic.title, topic.context, target.role || 'Expert');
+          const content = await generateTopicContent(topic.title, topic.context, expert.role || 'Expert');
           const imageBase64 = await generateConceptImage(content.imagePrompt);
 
           const conceptId = `concept-${Date.now()}-${count}`;
@@ -172,18 +184,18 @@ const App: React.FC = () => {
             type: NodeType.CONCEPT,
             label: content.title,
             content: content.explanation,
-            role: target.role,
+            role: expert.role,
             image: imageBase64,
             selectedForRoadmap: false,
-            x: (target.x || 0) + (Math.random() * 200 - 100),
-            y: (target.y || 0) + 100 + (count * 50)
+            x: (expert.x || 0) + (Math.random() * 200 - 100),
+            y: (expert.y || 0) + 100 + (count * 50)
           });
 
           // Link NEW Topic Node to the CORE PRINCIPLE (Gatekeeper) as requested
-          addLink(source.id, conceptId);
+          addLink(gatekeeper.id, conceptId);
         }
 
-        setStatusMessage(`${target.role} added ${count} new perspectives.`);
+        setStatusMessage(`${expert.role} added ${count} new perspectives.`);
 
       } catch (e) {
         setStatusMessage('Error during expert analysis.');

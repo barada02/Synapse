@@ -46,43 +46,31 @@ export const generateSpecialistPrompt = async (role: string): Promise<string> =>
 
 /**
  * Expert Agent (Brainstorming): Uses Search to find 3 related topics.
+ * Note: Uses gemini-2.5-flash for best tool support and speed.
  */
 export const getExpertBrainstorm = async (principle: string, role: string, systemPrompt: string): Promise<BrainstormResult> => {
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-image-preview', // Using Pro for search tool capability
+      model: 'gemini-2.5-flash',
       contents: `The Core Principle is: "${principle}".
       
-      Using Google Search, find 3 distinct, specific concepts, phenomena, or historical events in the field of "${role}" that align with or illustrate this principle.
+      TASK: Using Google Search, find 3 distinct, specific concepts, phenomena, or historical events in the field of "${role}" that align with or illustrate this principle.
       
-      Return the result as a JSON object with a "topics" array. Each item should have a "title" and a brief "context".`,
+      OUTPUT FORMAT: Return ONLY a raw JSON object (no markdown formatting) with a "topics" array. Each item must have a "title" and a brief "context".
+      Example: { "topics": [{ "title": "Example Concept", "context": "Brief explanation..." }] }`,
       config: {
         tools: [{googleSearch: {}}],
         systemInstruction: `${systemPrompt} You are a research agent. You must ground your analogies in real world facts using Google Search.`,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            topics: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  title: { type: Type.STRING },
-                  context: { type: Type.STRING }
-                },
-                required: ["title", "context"]
-              }
-            }
-          },
-          required: ["topics"]
-        }
+        // Note: responseMimeType and responseSchema are NOT supported when using googleSearch tool
       }
     });
 
-    const text = response.text;
+    let text = response.text;
     if (!text) throw new Error("No response from Expert Agent");
     
+    // Clean up markdown code blocks if present to ensure JSON parse works
+    text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+
     // Log grounding chunks if available
     if (response.candidates?.[0]?.groundingMetadata?.groundingChunks) {
       console.log("Grounding Chunks:", response.candidates[0].groundingMetadata.groundingChunks);
@@ -91,8 +79,12 @@ export const getExpertBrainstorm = async (principle: string, role: string, syste
     return JSON.parse(text) as BrainstormResult;
   } catch (error) {
     console.error(`Expert ${role} error:`, error);
-    // Fallback if search/json fails
-    return { topics: [{ title: `${role} Analogy`, context: "Could not retrieve specific search results." }] };
+    // Fallback if search/json fails - return meaningful error content so UI doesn't look broken
+    return { 
+      topics: [
+        { title: `Analysis Failed`, context: `Could not retrieve external data for ${role}. The API key may not have permissions for Search Grounding.` }
+      ] 
+    };
   }
 };
 
