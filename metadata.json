@@ -1,0 +1,5 @@
+{
+  "name": "Synapse Discovery Engine",
+  "description": "A multimodal, multi-agent AI application designed to accelerate scientific discovery by generating novel, cross-disciplinary hypotheses using Gemini 2.5.",
+  "requestFramePermissions": []
+}
