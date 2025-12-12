@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import * as d3Base from 'd3';
 import { NodeData, LinkData, NodeType } from '../types';
 import { MousePointer2, AlertCircle, ZoomIn, ZoomOut, Maximize } from 'lucide-react';
@@ -31,6 +31,19 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({
   
   const [sourceNode, setSourceNode] = useState<string | null>(null);
 
+  // Fix for D3 Mutation/Disconnect Issue:
+  // D3 mutates link objects to replace string IDs with Node references. 
+  // When 'nodes' state updates in React (e.g. toggling selection), we get NEW node objects.
+  // The old 'links' still point to the OLD node objects.
+  // We must generate fresh link objects using string IDs whenever nodes change, 
+  // forcing D3 to re-resolve the source/target to the NEW node objects.
+  const displayLinks = useMemo(() => {
+    return links.map((l: any) => ({
+      source: typeof l.source === 'object' ? l.source.id : l.source,
+      target: typeof l.target === 'object' ? l.target.id : l.target
+    }));
+  }, [links, nodes]);
+
   // Initialize Zoom & Simulation
   useEffect(() => {
     if (!wrapperRef.current || !svgRef.current || !containerRef.current) return;
@@ -54,7 +67,7 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({
 
     // 2. Setup Simulation
     const simulation = d3.forceSimulation(nodes)
-      .force("link", d3.forceLink(links).id((d: any) => d.id).distance(180))
+      .force("link", d3.forceLink(displayLinks).id((d: any) => d.id).distance(180))
       .force("charge", d3.forceManyBody().strength(-500)) // Repulsion
       .force("collide", d3.forceCollide().radius(70)) // Prevent overlap
       .force("x", d3.forceX(0).strength(0.05)) // Gentle pull to center horizontal
@@ -76,11 +89,13 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({
     
     // Maintain existing node positions if they exist to prevent jumping
     simulation.nodes(nodes);
+    
+    // Update links with the fresh set that uses string IDs, causing D3 to re-bind
     const linkForce = simulation.force("link") as any;
-    linkForce.links(links);
+    linkForce.links(displayLinks);
     
     simulation.alpha(1).restart();
-  }, [nodes, links]);
+  }, [nodes, displayLinks]);
 
   // Render Loop & Drag Logic
   useEffect(() => {
@@ -93,8 +108,13 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({
     const nodeGroup = container.select(".nodes");
 
     // --- Draw Links ---
+    // Use displayLinks here too, with a safe key function
     const linkSelection = linkGroup.selectAll("line")
-      .data(links, (d: any) => `${(d.source as NodeData).id}-${(d.target as NodeData).id}`);
+      .data(displayLinks, (d: any) => {
+         const sourceId = d.source.id || d.source;
+         const targetId = d.target.id || d.target;
+         return `${sourceId}-${targetId}`;
+      });
 
     linkSelection.exit().remove();
 
@@ -140,11 +160,15 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({
         const ring = isSelected ? "ring-2 ring-white" : "";
         const label = `<span class="text-xs font-bold text-center line-clamp-2 px-2">${d.label}</span>`;
         const typeLabel = `<span class="absolute -top-2 left-2 text-[10px] uppercase bg-slate-900 px-1 text-slate-400 border border-slate-700 rounded">${d.role || d.type}</span>`;
-        
+        const selectionBadge = d.selectedForRoadmap 
+          ? `<div class="absolute -top-2 -right-2 w-5 h-5 bg-green-500 text-slate-900 rounded-full flex items-center justify-center border border-white text-[10px] font-bold">✓</div>` 
+          : '';
+
         return `
           <div class="relative w-32 h-20 ${bgColor} border ${borderColor} ${ring} rounded-lg shadow-lg flex flex-col items-center justify-center cursor-pointer hover:scale-105 transition-transform select-none pointer-events-auto">
              ${typeLabel}
              ${label}
+             ${selectionBadge}
              ${d.image ? '<div class="absolute -right-2 -bottom-2 w-6 h-6 rounded-full bg-slate-100 border-2 border-slate-900 flex items-center justify-center text-slate-900 font-bold text-[10px]">Img</div>' : ''}
           </div>
         `;
@@ -193,17 +217,17 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({
     // --- Tick ---
     simulation.on("tick", () => {
       allLinks
-        .attr("x1", (d: any) => (d.source as NodeData).x!)
-        .attr("y1", (d: any) => (d.source as NodeData).y!)
-        .attr("x2", (d: any) => (d.target as NodeData).x!)
-        .attr("y2", (d: any) => (d.target as NodeData).y!);
+        .attr("x1", (d: any) => d.source.x)
+        .attr("y1", (d: any) => d.source.y)
+        .attr("x2", (d: any) => d.target.x)
+        .attr("y2", (d: any) => d.target.y);
 
       allNodes
         .attr("x", (d: any) => d.x! - 70) 
         .attr("y", (d: any) => d.y! - 40);
     });
 
-  }, [nodes, links, connectionMode, sourceNode, onNodeClick, onConnect, setConnectionMode]);
+  }, [nodes, displayLinks, connectionMode, sourceNode, onNodeClick, onConnect, setConnectionMode]);
 
   // View Controls
   const handleZoomIn = () => {
