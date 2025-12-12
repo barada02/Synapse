@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { NodeData, NodeType } from '../types';
-import { X, CheckSquare, Square, Maximize2, Minimize2, Zap, Activity } from 'lucide-react';
+import { X, CheckSquare, Square, Maximize2, Minimize2, Zap, Activity, Download } from 'lucide-react';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 
 interface NodeCardProps {
   node: NodeData;
@@ -12,6 +14,9 @@ interface NodeCardProps {
 
 const NodeCard: React.FC<NodeCardProps> = ({ node, onClose, onToggleSelection, onDeepDive, isProcessing = false }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null); // Ref for capturing content
+
   const isImageNode = node.type === NodeType.CONCEPT;
   const isSelectable = node.type === NodeType.CONCEPT || node.type === NodeType.GATEKEEPER;
   const canDeepDive = isImageNode && !node.isDeepDived && onDeepDive;
@@ -70,6 +75,46 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, onClose, onToggleSelection, o
     return html;
   };
 
+  // --- PDF Export Logic ---
+  const handleExportPdf = async () => {
+    if (!contentRef.current) return;
+    setIsExporting(true);
+
+    try {
+      // Capture the element
+      const canvas = await html2canvas(contentRef.current, {
+        scale: 2, // High resolution
+        backgroundColor: '#020617', // Match slate-950 background
+        useCORS: true, // Needed for external/base64 images
+        logging: false
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+      
+      // Calculate dimensions to fit content
+      const imgWidth = canvas.width;
+      const imgHeight = canvas.height;
+
+      // Create PDF with custom size matching the content (Single long page style for digital reading)
+      const pdf = new jsPDF({
+        orientation: imgWidth > imgHeight ? 'landscape' : 'portrait',
+        unit: 'px',
+        format: [imgWidth, imgHeight]
+      });
+
+      pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
+      
+      const fileName = `${node.label.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_synapse.pdf`;
+      pdf.save(fileName);
+
+    } catch (error) {
+      console.error("Export failed:", error);
+      alert("Failed to export PDF. Please try again.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   // --- MODAL VIEW (Expanded) ---
   if (isExpanded) {
     return (
@@ -91,6 +136,16 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, onClose, onToggleSelection, o
               </div>
             </div>
             <div className="flex gap-2">
+              <button
+                onClick={handleExportPdf}
+                disabled={isExporting}
+                className="p-2 hover:bg-indigo-900/30 rounded-lg transition-colors text-indigo-400 hover:text-indigo-300 flex items-center gap-2 text-xs font-bold uppercase tracking-wider disabled:opacity-50"
+                title="Export to PDF"
+              >
+                 {isExporting ? <Activity size={18} className="animate-spin"/> : <Download size={18} />}
+                 <span className="hidden sm:inline">Export PDF</span>
+              </button>
+              <div className="w-px h-8 bg-slate-800 mx-1 self-center"></div>
               <button 
                 onClick={() => setIsExpanded(false)}
                 className="p-2 hover:bg-slate-800 rounded-lg transition-colors text-slate-400 hover:text-white flex items-center gap-2 text-xs font-bold uppercase tracking-wider"
@@ -109,33 +164,43 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, onClose, onToggleSelection, o
           </div>
 
           {/* Scrollable Content Area */}
-          <div className="flex-1 overflow-y-auto p-8">
-            <div className={`flex flex-col ${isImageNode && node.image ? 'lg:flex-row' : ''} gap-8`}>
-              
-              {/* Image Section (if present) */}
-              {isImageNode && node.image && (
-                <div className="lg:w-1/2 flex-shrink-0">
-                  <div className="sticky top-0 rounded-xl overflow-hidden border border-slate-700 shadow-2xl bg-black">
-                    <img src={node.image} alt={node.label} className="w-full h-auto object-contain max-h-[600px]" />
+          <div className="flex-1 overflow-y-auto p-8 relative" id="printable-content">
+            {/* Capture Target Wrapper - Added padding/bg to ensure clean PDF capture */}
+            <div ref={contentRef} className="bg-slate-950 p-4"> 
+              <div className={`flex flex-col ${isImageNode && node.image ? 'lg:flex-row' : ''} gap-8`}>
+                
+                {/* Image Section (if present) */}
+                {isImageNode && node.image && (
+                  <div className="lg:w-1/2 flex-shrink-0">
+                    <div className="rounded-xl overflow-hidden border border-slate-700 shadow-2xl bg-black">
+                      <img src={node.image} alt={node.label} className="w-full h-auto object-contain max-h-[600px]" />
+                    </div>
+                  </div>
+                )}
+
+                {/* Text Content */}
+                <div className={`flex-1 min-w-0 ${isImageNode && node.image ? 'lg:w-1/2' : 'w-full'}`}>
+                   {/* PDF Header Injection (Hidden normally, visible in PDF logic if we wanted, but sticking to WYSIWYG) */}
+                   <div className="prose prose-invert prose-lg max-w-none text-slate-300">
+                    {node.type === NodeType.ROADMAP || node.isDeepDived ? (
+                      <div dangerouslySetInnerHTML={{ __html: renderMarkdown(node.content) }} />
+                    ) : (
+                      <p className="whitespace-pre-wrap leading-relaxed">{node.content}</p>
+                    )}
                   </div>
                 </div>
-              )}
 
-              {/* Text Content */}
-              <div className={`flex-1 min-w-0 ${isImageNode && node.image ? 'lg:w-1/2' : 'w-full'}`}>
-                <div className="prose prose-invert prose-lg max-w-none text-slate-300">
-                  {node.type === NodeType.ROADMAP || node.isDeepDived ? (
-                    <div dangerouslySetInnerHTML={{ __html: renderMarkdown(node.content) }} />
-                  ) : (
-                    <p className="whitespace-pre-wrap leading-relaxed">{node.content}</p>
-                  )}
-                </div>
               </div>
-
+              
+              {/* Footer Stamp for PDF */}
+              <div className="mt-8 pt-4 border-t border-slate-800 text-xs text-slate-600 flex justify-between">
+                  <span>Generated by Synapse Discovery Engine</span>
+                  <span>{new Date().toLocaleDateString()}</span>
+              </div>
             </div>
           </div>
           
-          {/* Footer Actions */}
+          {/* Footer Actions (UI Only - Not in PDF) */}
           <div className="p-6 border-t border-slate-800 bg-slate-900/50 flex flex-col sm:flex-row justify-between items-center gap-4">
             <div className="text-xs text-slate-600 font-mono hidden sm:block">
               ID: {node.id.split('-')[0]}...
