@@ -33,6 +33,15 @@
     *   Nodes appear linked to Gatekeeper.
 *   **Roadmap**: User toggles "Select for Roadmap" on nodes -> Clicks "Generate Roadmap".
 
+## Phase 4: Canvas Usability Improvements (New)
+*   **Problem**: Nodes float off-screen due to repulsion forces, and the user cannot retrieve them because the canvas is static.
+*   **Solution**:
+    1.  **Pan & Zoom**: Implement `d3.zoom` on the SVG canvas. This allows the user to drag the background to pan and scroll to zoom, making the workspace effectively infinite.
+    2.  **Smart Spawning**: Update `App.tsx` to spawn new nodes (Experts/Concepts) *relative* to their parent/source node's position (e.g., `parent.x + 50`), rather than random coordinates. This keeps clusters together initially.
+    3.  **Physics Tweak**: Increase `d3.forceManyBody` damping or add a weak centering force to prevent nodes from drifting too far endlessly.
+    4.  **View Controls**: Add a "Recenter / Fit View" button to the UI that automatically scales and translates the graph to fit all nodes within the visible viewport.
+
 ## User Interface
 *   **Sidebar**: Updated to support User Role input and dynamic expert list.
 *   **NodeCard**: Added selection toggle for roadmap synthesis.
+*   **Canvas Controls**: Add Zoom In, Zoom Out, and Fit to Screen buttons.
