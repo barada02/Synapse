@@ -1,9 +1,16 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import Sidebar from './components/Sidebar';
 import GraphCanvas from './components/GraphCanvas';
 import NodeCard from './components/NodeCard';
-import { NodeData, LinkData, NodeType } from './types';
-import { gatekeeperTranslate, generateExpertAnalogy, generateConceptImage, synthesizeRoadmap } from './services/geminiService';
+import { NodeData, LinkData, NodeType, ExpertDefinition, DEFAULT_EXPERTS } from './types';
+import { 
+  gatekeeperTranslate, 
+  generateSpecialistPrompt, 
+  getExpertBrainstorm, 
+  generateTopicContent, 
+  generateConceptImage, 
+  synthesizeRoadmap 
+} from './services/geminiService';
 
 const App: React.FC = () => {
   const [nodes, setNodes] = useState<NodeData[]>([]);
@@ -12,6 +19,11 @@ const App: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [connectionMode, setConnectionMode] = useState(false);
+  const [resetKey, setResetKey] = useState(0);
+
+  // App State
+  const [userRole, setUserRole] = useState('');
+  const [availableExperts, setAvailableExperts] = useState<ExpertDefinition[]>(DEFAULT_EXPERTS);
 
   // Helper to add nodes safely
   const addNode = (node: NodeData) => {
@@ -20,32 +32,56 @@ const App: React.FC = () => {
 
   // Helper to add links safely
   const addLink = (source: string, target: string) => {
-    // Avoid duplicates
     setLinks(prev => {
-      if (prev.find(l => (l.source === source || (l.source as NodeData).id === source) && (l.target === target || (l.target as NodeData).id === target))) {
-        return prev;
-      }
+      const exists = prev.some(l => 
+        ((l.source as NodeData).id === source || l.source === source) && 
+        ((l.target as NodeData).id === target || l.target === target)
+      );
+      if (exists) return prev;
       return [...prev, { source, target }];
     });
   };
 
+  // Update a node property (e.g. selection)
+  const toggleNodeSelection = (nodeId: string) => {
+    setNodes(prev => prev.map(n => 
+      n.id === nodeId ? { ...n, selectedForRoadmap: !n.selectedForRoadmap } : n
+    ));
+    if (selectedNode && selectedNode.id === nodeId) {
+      setSelectedNode(prev => prev ? { ...prev, selectedForRoadmap: !prev.selectedForRoadmap } : null);
+    }
+  };
+
+  const handleReset = () => {
+    setNodes([]);
+    setLinks([]);
+    setSelectedNode(null);
+    setIsProcessing(false);
+    setStatusMessage('Session reset.');
+    setConnectionMode(false);
+    setUserRole('');
+    setAvailableExperts(DEFAULT_EXPERTS); // Reset custom experts too? Maybe keep them? Let's reset for full clean state.
+    setResetKey(prev => prev + 1);
+  };
+
   // 1. Initial Gatekeeper Flow
-  const handleStart = async (userInput: string) => {
+  const handleStart = async (role: string, userInput: string) => {
+    setUserRole(role);
     setIsProcessing(true);
-    setStatusMessage('Gatekeeper is analyzing input...');
+    setStatusMessage('Gatekeeper is distilling core principle...');
     
     // Create User Node
     const userId = 'user-input';
     addNode({
       id: userId,
       type: NodeType.USER_INPUT,
-      label: 'Hypothesis',
-      content: userInput,
-      x: 0, y: 0 // Will be positioned by force graph
+      label: 'Core Topic',
+      content: `${role}'s Topic: ${userInput}`,
+      x: 0, y: 0
     });
 
     try {
-      const principle = await gatekeeperTranslate(userInput);
+      const principle = await gatekeeperTranslate(role, userInput);
       const gatekeeperId = 'gatekeeper-1';
       
       addNode({
@@ -65,67 +101,92 @@ const App: React.FC = () => {
     }
   };
 
-  // 2. Add Expert Flow
-  const handleAddExpert = (role: string) => {
+  // 2a. Generate Specialist
+  const handleGenerateSpecialist = async (role: string) => {
+    setIsProcessing(true);
+    setStatusMessage(`Defining persona for ${role}...`);
+    try {
+      const systemPrompt = await generateSpecialistPrompt(role);
+      const newExpert: ExpertDefinition = {
+        id: `exp-${Date.now()}`,
+        role: role,
+        color: 'bg-indigo-600', // Default color for custom
+        systemPrompt: systemPrompt
+      };
+      setAvailableExperts(prev => [...prev, newExpert]);
+      setStatusMessage(`${role} added to list.`);
+    } catch (error) {
+      setStatusMessage("Failed to generate specialist.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // 2b. Add Expert to Workspace
+  const handleAddExpert = (expert: ExpertDefinition) => {
     const id = `expert-${Date.now()}`;
     addNode({
       id,
       type: NodeType.EXPERT,
-      label: role,
-      content: `Specialized ${role} agent waiting for context connection.`,
-      role: role,
+      label: expert.role,
+      content: expert.systemPrompt || `You are a ${expert.role}.`,
+      role: expert.role,
       x: Math.random() * 200, y: Math.random() * 200
     });
-    setStatusMessage(`${role} added. Connect to Principle to activate.`);
-    
-    // Auto-enter connection mode for better UX
+    setStatusMessage(`${expert.role} spawned. Link to Gatekeeper to brainstorm.`);
     setConnectionMode(true);
   };
 
   // 3. Connect Flow (Triggering Expert Analysis)
   const handleConnect = async (sourceId: string, targetId: string) => {
     addLink(sourceId, targetId);
-    setConnectionMode(false); // Exit mode
+    setConnectionMode(false); 
 
-    // Check if we connected Gatekeeper -> Expert
     const source = nodes.find(n => n.id === sourceId);
     const target = nodes.find(n => n.id === targetId);
-
     if (!source || !target) return;
 
-    // Logic: If connecting a Principle (Source) to an empty Expert (Target)
+    // Gatekeeper (Source) -> Expert (Target) Logic
     if (source.type === NodeType.GATEKEEPER && target.type === NodeType.EXPERT) {
       setIsProcessing(true);
-      setStatusMessage(`${target.role} is generating analogies...`);
+      setStatusMessage(`${target.role} is searching for connections...`);
       
       try {
-        const result = await generateExpertAnalogy(source.content, target.role || 'Expert');
+        const expertDef = availableExperts.find(e => e.role === target.role) || { systemPrompt: target.content };
         
-        // Update Expert Node to show it's active (optional, could just leave it)
+        // Step 1: Brainstorm 3 topics via Search
+        const brainstorm = await getExpertBrainstorm(source.content, target.role || 'Expert', expertDef.systemPrompt || '');
         
-        // Spawn Concept Node
-        const conceptId = `concept-${Date.now()}`;
-        
-        // Parallel: Generate Image
-        setStatusMessage(`Generating visualization for "${result.title}"...`);
-        const imageBase64 = await generateConceptImage(result.imagePrompt);
+        // Step 2 & 3: Generate content and image for each topic
+        let count = 0;
+        for (const topic of brainstorm.topics.slice(0, 3)) { // Limit to 3
+          count++;
+          setStatusMessage(`${target.role}: Expanding topic ${count}/3 ("${topic.title}")...`);
+          
+          const content = await generateTopicContent(topic.title, topic.context, target.role || 'Expert');
+          const imageBase64 = await generateConceptImage(content.imagePrompt);
 
-        addNode({
-          id: conceptId,
-          type: NodeType.CONCEPT,
-          label: result.title,
-          content: result.explanation,
-          role: target.role,
-          image: imageBase64,
-          x: (target.x || 0) + 100,
-          y: (target.y || 0) + 100
-        });
+          const conceptId = `concept-${Date.now()}-${count}`;
+          addNode({
+            id: conceptId,
+            type: NodeType.CONCEPT,
+            label: content.title,
+            content: content.explanation,
+            role: target.role,
+            image: imageBase64,
+            selectedForRoadmap: false,
+            x: (target.x || 0) + (Math.random() * 200 - 100),
+            y: (target.y || 0) + 100 + (count * 50)
+          });
 
-        addLink(target.id, conceptId);
-        setStatusMessage('Analogy generated.');
+          // Link NEW Topic Node to the CORE PRINCIPLE (Gatekeeper) as requested
+          addLink(source.id, conceptId);
+        }
+
+        setStatusMessage(`${target.role} added ${count} new perspectives.`);
 
       } catch (e) {
-        setStatusMessage('Error generating expert content.');
+        setStatusMessage('Error during expert analysis.');
         console.error(e);
       } finally {
         setIsProcessing(false);
@@ -136,19 +197,23 @@ const App: React.FC = () => {
   // 4. Synthesis Flow
   const handleSynthesize = async () => {
     const principleNode = nodes.find(n => n.type === NodeType.GATEKEEPER);
-    const concepts = nodes.filter(n => n.type === NodeType.CONCEPT);
+    const selectedNodes = nodes.filter(n => n.selectedForRoadmap);
     
-    if (!principleNode || concepts.length === 0) {
-      setStatusMessage("Need a principle and at least one concept to synthesize.");
+    if (!principleNode) {
+      setStatusMessage("No Core Principle found.");
+      return;
+    }
+    if (selectedNodes.length === 0) {
+      setStatusMessage("Please select at least one concept node for the roadmap.");
       return;
     }
 
     setIsProcessing(true);
-    setStatusMessage('Synthesizing Research Roadmap...');
+    setStatusMessage('Synthesizing tailored Roadmap...');
 
     try {
-      const analogiesData = concepts.map(c => ({ role: c.role || 'General', content: c.content }));
-      const roadmapText = await synthesizeRoadmap(principleNode.content, analogiesData);
+      const nodesContent = selectedNodes.map(n => `[${n.role || 'Concept'}]: ${n.label} - ${n.content}`);
+      const roadmapText = await synthesizeRoadmap(userRole, principleNode.content, nodesContent);
       
       const roadmapId = `roadmap-${Date.now()}`;
       addNode({
@@ -156,12 +221,12 @@ const App: React.FC = () => {
         type: NodeType.ROADMAP,
         label: 'Research Roadmap',
         content: roadmapText,
-        x: 0, y: 300
+        x: 0, y: 400
       });
 
-      // Link all concepts to roadmap
-      concepts.forEach(c => addLink(c.id, roadmapId));
-      setStatusMessage('Roadmap created successfully.');
+      // Link selected concepts to roadmap
+      selectedNodes.forEach(c => addLink(c.id, roadmapId));
+      setStatusMessage('Roadmap generated.');
 
     } catch (e) {
       setStatusMessage('Error during synthesis.');
@@ -178,15 +243,19 @@ const App: React.FC = () => {
       <Sidebar 
         onStart={handleStart}
         onAddExpert={handleAddExpert}
+        onGenerateSpecialist={handleGenerateSpecialist}
         onSynthesize={handleSynthesize}
+        onReset={handleReset}
         hasGatekeeper={hasGatekeeper}
         hasExperts={hasExperts}
         isProcessing={isProcessing}
         statusMessage={statusMessage}
+        availableExperts={availableExperts}
       />
       
       <main className="flex-1 relative flex flex-col">
         <GraphCanvas 
+          key={resetKey}
           nodes={nodes}
           links={links}
           onNodeClick={setSelectedNode}
@@ -199,7 +268,8 @@ const App: React.FC = () => {
       {selectedNode && (
         <NodeCard 
           node={selectedNode} 
-          onClose={() => setSelectedNode(null)} 
+          onClose={() => setSelectedNode(null)}
+          onToggleSelection={toggleNodeSelection}
         />
       )}
     </div>

@@ -1,53 +1,79 @@
 import React, { useState } from 'react';
-import { Activity, Play, Plus, Users, ArrowRight, BrainCircuit, Wand2 } from 'lucide-react';
-import { ExpertDefinition, DEFAULT_EXPERTS } from '../types';
+import { Activity, Play, Plus, BrainCircuit, Wand2, RefreshCw, UserCircle } from 'lucide-react';
+import { ExpertDefinition } from '../types';
 
 interface SidebarProps {
-  onStart: (input: string) => void;
-  onAddExpert: (role: string) => void;
+  onStart: (role: string, input: string) => void;
+  onAddExpert: (expert: ExpertDefinition) => void;
+  onGenerateSpecialist: (role: string) => void;
   onSynthesize: () => void;
+  onReset: () => void;
   hasGatekeeper: boolean;
   hasExperts: boolean;
   isProcessing: boolean;
   statusMessage: string;
+  availableExperts: ExpertDefinition[];
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
   onStart, 
-  onAddExpert, 
+  onAddExpert,
+  onGenerateSpecialist,
   onSynthesize,
+  onReset,
   hasGatekeeper,
   hasExperts,
   isProcessing,
-  statusMessage
+  statusMessage,
+  availableExperts
 }) => {
-  const [input, setInput] = useState('');
+  const [roleInput, setRoleInput] = useState('');
+  const [topicInput, setTopicInput] = useState('');
   const [customExpert, setCustomExpert] = useState('');
   const [showCustomInput, setShowCustomInput] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (input.trim()) onStart(input);
+    if (roleInput.trim() && topicInput.trim()) {
+      onStart(roleInput, topicInput);
+    }
   };
 
   const handleCustomExpertSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (customExpert.trim()) {
-      onAddExpert(customExpert);
+      onGenerateSpecialist(customExpert);
       setCustomExpert('');
       setShowCustomInput(false);
+    }
+  };
+
+  const handleResetClick = () => {
+    if (window.confirm("Start new session? Current progress will be lost.")) {
+      setRoleInput('');
+      setTopicInput('');
+      onReset();
     }
   };
 
   return (
     <div className="w-80 h-full bg-slate-950 border-r border-slate-800 flex flex-col shadow-xl z-10 flex-shrink-0">
       {/* Header */}
-      <div className="p-6 border-b border-slate-800">
-        <div className="flex items-center gap-3 mb-2 text-cyan-400">
-          <Activity size={24} />
-          <h1 className="text-xl font-bold tracking-tight text-white">Synapse</h1>
+      <div className="p-6 border-b border-slate-800 flex justify-between items-start">
+        <div>
+          <div className="flex items-center gap-3 mb-2 text-cyan-400">
+            <Activity size={24} />
+            <h1 className="text-xl font-bold tracking-tight text-white">Synapse v2</h1>
+          </div>
+          <p className="text-xs text-slate-400">Multimodal Discovery Engine</p>
         </div>
-        <p className="text-xs text-slate-400">Multimodal Discovery Engine</p>
+        <button 
+          onClick={handleResetClick}
+          className="text-slate-500 hover:text-white transition-colors p-1 rounded-md hover:bg-slate-800"
+          title="Reset"
+        >
+          <RefreshCw size={18} />
+        </button>
       </div>
 
       {/* Main Content Area */}
@@ -57,18 +83,36 @@ const Sidebar: React.FC<SidebarProps> = ({
         <section className={`transition-opacity duration-500 ${hasGatekeeper ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
           <div className="flex items-center gap-2 mb-3 text-slate-200 font-semibold">
             <span className="flex items-center justify-center w-6 h-6 rounded-full bg-slate-800 text-xs">1</span>
-            <h2>Core Hypothesis</h2>
+            <h2>Define Scope</h2>
           </div>
-          <form onSubmit={handleSubmit}>
-            <textarea 
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="E.g., How does the jamming transition in cells relate to traffic flow?"
-              className="w-full h-32 bg-slate-900 border border-slate-700 rounded-md p-3 text-sm text-slate-300 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 resize-none mb-3"
-            />
+          <form onSubmit={handleSubmit} className="space-y-3">
+             <div>
+              <label className="text-xs text-slate-500 block mb-1">Your Role / Domain</label>
+              <div className="relative">
+                <UserCircle size={16} className="absolute left-3 top-2.5 text-slate-500" />
+                <input 
+                  type="text"
+                  value={roleInput}
+                  onChange={(e) => setRoleInput(e.target.value)}
+                  placeholder="e.g. Architect, Student"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-md py-2 pl-9 pr-3 text-sm text-slate-300 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs text-slate-500 block mb-1">Core Topic</label>
+              <textarea 
+                value={topicInput}
+                onChange={(e) => setTopicInput(e.target.value)}
+                placeholder="e.g. How does fungal mycelium distribute nutrients?"
+                className="w-full h-24 bg-slate-900 border border-slate-700 rounded-md p-3 text-sm text-slate-300 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-cyan-500 resize-none"
+              />
+            </div>
+
             <button 
               type="submit" 
-              disabled={!input.trim() || isProcessing}
+              disabled={!roleInput.trim() || !topicInput.trim() || isProcessing}
               className="w-full bg-cyan-600 hover:bg-cyan-500 text-white py-2 px-4 rounded-md text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isProcessing && !hasGatekeeper ? <Activity className="animate-spin" size={16}/> : <Play size={16} />}
@@ -85,17 +129,17 @@ const Sidebar: React.FC<SidebarProps> = ({
           </div>
           <p className="text-xs text-slate-500 mb-4">Click to spawn an agent. Drag from Gatekeeper to Agent to connect.</p>
           
-          <div className="grid grid-cols-1 gap-2">
-            {DEFAULT_EXPERTS.map((expert) => (
+          <div className="grid grid-cols-1 gap-2 max-h-60 overflow-y-auto pr-1">
+            {availableExperts.map((expert) => (
               <button
                 key={expert.id}
-                onClick={() => onAddExpert(expert.role)}
+                onClick={() => onAddExpert(expert)}
                 disabled={isProcessing}
                 className="flex items-center justify-between p-3 bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-md group transition-all text-left"
               >
                 <div className="flex items-center gap-3">
                   <div className={`w-2 h-2 rounded-full ${expert.color}`}></div>
-                  <span className="text-sm text-slate-300 group-hover:text-white">{expert.role}</span>
+                  <span className="text-sm text-slate-300 group-hover:text-white truncate w-32">{expert.role}</span>
                 </div>
                 <Plus size={14} className="text-slate-600 group-hover:text-white" />
               </button>
@@ -115,13 +159,15 @@ const Sidebar: React.FC<SidebarProps> = ({
               <input
                 type="text"
                 autoFocus
-                placeholder="e.g. Tectonophysicist"
+                placeholder="e.g. Urban Planner"
                 value={customExpert}
                 onChange={(e) => setCustomExpert(e.target.value)}
                 className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500 mb-2"
               />
               <div className="flex gap-2">
-                <button type="submit" className="flex-1 bg-slate-800 hover:bg-slate-700 text-white text-xs py-1.5 rounded">Add</button>
+                <button type="submit" disabled={isProcessing} className="flex-1 bg-slate-800 hover:bg-slate-700 text-white text-xs py-1.5 rounded">
+                    {isProcessing ? '...' : 'Add'}
+                </button>
                 <button type="button" onClick={() => setShowCustomInput(false)} className="flex-1 bg-transparent hover:bg-slate-900 text-slate-500 text-xs py-1.5 rounded">Cancel</button>
               </div>
             </form>
@@ -134,6 +180,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             <span className="flex items-center justify-center w-6 h-6 rounded-full bg-slate-800 text-xs">3</span>
             <h2>Synthesis</h2>
           </div>
+          <p className="text-xs text-slate-500 mb-2">Select nodes in the workspace, then click below.</p>
           <button 
             onClick={onSynthesize}
             disabled={isProcessing}

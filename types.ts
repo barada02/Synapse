@@ -14,6 +14,7 @@ export interface NodeData {
   role?: string; // For experts (e.g., "Biologist")
   image?: string; // Base64 image for Concept nodes
   expanded?: boolean;
+  selectedForRoadmap?: boolean; // New: For synthesis selection
   x?: number;
   y?: number;
   vx?: number;
@@ -30,7 +31,16 @@ export interface GraphState {
   links: LinkData[];
 }
 
-export interface AnalogyResult {
+// Result from the Expert's initial search/brainstorm
+export interface BrainstormResult {
+  topics: {
+    title: string;
+    context: string;
+  }[];
+}
+
+// Result from the Content Agent expanding a topic
+export interface TopicContentResult {
   title: string;
   explanation: string;
   imagePrompt: string;
@@ -40,11 +50,32 @@ export interface ExpertDefinition {
   id: string;
   role: string;
   color: string;
+  systemPrompt?: string; // New: Custom instructions for the agent
 }
 
 export const DEFAULT_EXPERTS: ExpertDefinition[] = [
-  { id: 'exp-bio', role: 'Evolutionary Biologist', color: 'bg-green-600' },
-  { id: 'exp-phys', role: 'Quantum Physicist', color: 'bg-purple-600' },
-  { id: 'exp-hist', role: 'Historian', color: 'bg-amber-600' },
-  { id: 'exp-eng', role: 'Mechanical Engineer', color: 'bg-blue-600' },
+  { 
+    id: 'exp-bio', 
+    role: 'Evolutionary Biologist', 
+    color: 'bg-green-600',
+    systemPrompt: 'You are an Evolutionary Biologist. Look for connections related to adaptation, natural selection, cellular processes, and ecosystems.'
+  },
+  { 
+    id: 'exp-phys', 
+    role: 'Quantum Physicist', 
+    color: 'bg-purple-600', 
+    systemPrompt: 'You are a Quantum Physicist. Look for connections related to superposition, entanglement, wave-particle duality, and field theory.'
+  },
+  { 
+    id: 'exp-hist', 
+    role: 'Historian', 
+    color: 'bg-amber-600', 
+    systemPrompt: 'You are a Historian. Look for connections in human history, societal collapse, revolutions, and ancient civilizations.'
+  },
+  { 
+    id: 'exp-eng', 
+    role: 'Mechanical Engineer', 
+    color: 'bg-blue-600', 
+    systemPrompt: 'You are a Mechanical Engineer. Look for connections in structural integrity, thermodynamics, fluid dynamics, and systems control.'
+  },
 ];
