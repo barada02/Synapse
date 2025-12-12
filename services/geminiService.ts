@@ -176,3 +176,37 @@ export const synthesizeRoadmap = async (userRole: string, principle: string, sel
     throw error;
   }
 };
+
+/**
+ * Deep Dive Agent: Explains the connection between the Concept and the User's Original Topic.
+ */
+export const generateDeepConnection = async (
+  userRole: string,
+  userTopicInfo: string,
+  conceptTitle: string,
+  conceptContent: string,
+  expertRole: string
+): Promise<string> => {
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-pro-preview', // Use a stronger model for reasoning
+      contents: `
+      User Input Context: ${userTopicInfo}
+      User Role: ${userRole}
+      
+      Expert Role: ${expertRole}
+      Expert Concept: "${conceptTitle}"
+      Concept Description: "${conceptContent}"
+      
+      TASK: Write a detailed "Deep Dive" analysis (approx. 200 words) that explicitly explains structurally and functionally how this Expert Concept serves as a strong analogy or solution for the User's Original Topic. 
+      Focus on the MECHANISM of the connection. Why does this matter to the user?
+      
+      Output in Markdown. Use a header "### ⚡ Deep Dive: The Cross-Disciplinary Link".`,
+    });
+
+    return response.text || "Could not generate deep dive analysis.";
+  } catch (error) {
+    console.error("Deep Dive error:", error);
+    return "Error generating analysis.";
+  }
+};

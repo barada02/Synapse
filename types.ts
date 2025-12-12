@@ -1,3 +1,4 @@
+
 export enum NodeType {
   USER_INPUT = 'USER_INPUT',
   GATEKEEPER = 'GATEKEEPER', // The core principle
@@ -15,6 +16,7 @@ export interface NodeData {
   image?: string; // Base64 image for Concept nodes
   expanded?: boolean;
   selectedForRoadmap?: boolean; // New: For synthesis selection
+  isDeepDived?: boolean; // New: Has the deep connection analysis been run?
   x?: number;
   y?: number;
   vx?: number;

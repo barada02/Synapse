@@ -1,17 +1,20 @@
 import React, { useState } from 'react';
 import { NodeData, NodeType } from '../types';
-import { X, CheckSquare, Square, Maximize2, Minimize2 } from 'lucide-react';
+import { X, CheckSquare, Square, Maximize2, Minimize2, Zap, Activity } from 'lucide-react';
 
 interface NodeCardProps {
   node: NodeData;
   onClose: () => void;
   onToggleSelection: (id: string) => void;
+  onDeepDive?: (id: string) => void; // Optional for backward compatibility, but we use it
+  isProcessing?: boolean;
 }
 
-const NodeCard: React.FC<NodeCardProps> = ({ node, onClose, onToggleSelection }) => {
+const NodeCard: React.FC<NodeCardProps> = ({ node, onClose, onToggleSelection, onDeepDive, isProcessing = false }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const isImageNode = node.type === NodeType.CONCEPT;
   const isSelectable = node.type === NodeType.CONCEPT || node.type === NodeType.GATEKEEPER;
+  const canDeepDive = isImageNode && !node.isDeepDived && onDeepDive;
 
   // Color mapping logic
   const getColor = () => {
@@ -76,8 +79,11 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, onClose, onToggleSelection })
               {/* Text Content */}
               <div className={`flex-1 min-w-0 ${isImageNode && node.image ? 'lg:w-1/2' : 'w-full'}`}>
                 <div className="prose prose-invert prose-lg max-w-none text-slate-300">
-                  {node.type === NodeType.ROADMAP ? (
-                    <div dangerouslySetInnerHTML={{ __html: node.content.replace(/\n/g, '<br/>') }} />
+                  {node.type === NodeType.ROADMAP || node.isDeepDived ? (
+                    // Render HTML/Markdown-ish content (simple replace for newlines)
+                    // If deep dived, it will contain markdown headers which simple replacement handles poorly but is legible
+                    // For better markdown support we'd use a library, but text-replacement serves the MVP
+                    <div dangerouslySetInnerHTML={{ __html: node.content.replace(/\n/g, '<br/>').replace(/### (.*)/g, '<h3 class="text-xl font-bold text-white mt-6 mb-2">$1</h3>') }} />
                   ) : (
                     <p className="whitespace-pre-wrap leading-relaxed">{node.content}</p>
                   )}
@@ -93,19 +99,32 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, onClose, onToggleSelection })
               ID: {node.id.split('-')[0]}...
             </div>
             
-            {isSelectable && (
-              <button 
-                onClick={() => onToggleSelection(node.id)}
-                className={`w-full sm:w-auto px-6 py-3 rounded-lg flex items-center justify-center gap-3 font-semibold transition-all transform active:scale-95 ${
-                  node.selectedForRoadmap 
-                    ? 'bg-green-600 hover:bg-green-500 text-white shadow-lg shadow-green-900/20 ring-1 ring-green-400' 
-                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600 hover:border-slate-500'
-                }`}
-              >
-                {node.selectedForRoadmap ? <CheckSquare size={20} className="text-white" /> : <Square size={20} />}
-                <span>{node.selectedForRoadmap ? 'Selected for Roadmap' : 'Select for Roadmap'}</span>
-              </button>
-            )}
+            <div className="flex gap-3 w-full sm:w-auto">
+                {canDeepDive && (
+                    <button 
+                        onClick={() => onDeepDive && onDeepDive(node.id)}
+                        disabled={isProcessing}
+                        className="flex-1 sm:flex-none px-6 py-3 rounded-lg flex items-center justify-center gap-2 font-semibold text-white bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-900/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-wait"
+                    >
+                        {isProcessing ? <Activity className="animate-spin" size={20} /> : <Zap size={20} />}
+                        <span>Deep Dive Connection</span>
+                    </button>
+                )}
+
+                {isSelectable && (
+                <button 
+                    onClick={() => onToggleSelection(node.id)}
+                    className={`flex-1 sm:flex-none px-6 py-3 rounded-lg flex items-center justify-center gap-3 font-semibold transition-all transform active:scale-95 ${
+                    node.selectedForRoadmap 
+                        ? 'bg-green-600 hover:bg-green-500 text-white shadow-lg shadow-green-900/20 ring-1 ring-green-400' 
+                        : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600 hover:border-slate-500'
+                    }`}
+                >
+                    {node.selectedForRoadmap ? <CheckSquare size={20} className="text-white" /> : <Square size={20} />}
+                    <span>{node.selectedForRoadmap ? 'Select for Roadmap' : 'Select for Roadmap'}</span>
+                </button>
+                )}
+            </div>
           </div>
         </div>
       </div>
@@ -160,8 +179,8 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, onClose, onToggleSelection })
 
         {/* Text */}
         <div className="prose prose-invert prose-sm max-w-none text-slate-300">
-          {node.type === NodeType.ROADMAP ? (
-            <div dangerouslySetInnerHTML={{ __html: node.content.replace(/\n/g, '<br/>') }} />
+          {node.type === NodeType.ROADMAP || node.isDeepDived ? (
+            <div dangerouslySetInnerHTML={{ __html: node.content.replace(/\n/g, '<br/>').replace(/### (.*)/g, '<h3 class="text-sm font-bold text-white mt-4 mb-1 border-t border-slate-700 pt-2">$1</h3>') }} />
           ) : (
             <p className="whitespace-pre-wrap">{node.content}</p>
           )}
@@ -169,8 +188,19 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, onClose, onToggleSelection })
       </div>
 
       {/* Footer Actions */}
-      {isSelectable && (
-        <div className="p-4 border-t border-slate-800 bg-slate-900">
+      <div className="p-4 border-t border-slate-800 bg-slate-900 flex flex-col gap-3">
+        {canDeepDive && (
+            <button 
+                onClick={() => onDeepDive && onDeepDive(node.id)}
+                disabled={isProcessing}
+                className="w-full py-2.5 rounded-md flex items-center justify-center gap-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 shadow transition-all active:scale-95 disabled:opacity-50"
+            >
+                {isProcessing ? <Activity className="animate-spin" size={16} /> : <Zap size={16} />}
+                <span>Deep Dive Connection</span>
+            </button>
+        )}
+
+        {isSelectable && (
           <button 
             onClick={() => onToggleSelection(node.id)}
             className={`w-full py-2.5 rounded-md flex items-center justify-center gap-2 text-sm font-semibold transition-all active:scale-95 ${
@@ -182,8 +212,8 @@ const NodeCard: React.FC<NodeCardProps> = ({ node, onClose, onToggleSelection })
             {node.selectedForRoadmap ? <CheckSquare size={16} /> : <Square size={16} />}
             <span>{node.selectedForRoadmap ? 'Included in Roadmap' : 'Include in Roadmap'}</span>
           </button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 };

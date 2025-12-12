@@ -9,7 +9,8 @@ import {
   getExpertBrainstorm, 
   generateTopicContent, 
   generateConceptImage, 
-  synthesizeRoadmap 
+  synthesizeRoadmap,
+  generateDeepConnection
 } from './services/geminiService';
 
 const App: React.FC = () => {
@@ -194,6 +195,7 @@ const App: React.FC = () => {
             role: expert.role,
             image: imageBase64,
             selectedForRoadmap: false,
+            isDeepDived: false,
             x: currentExpertX + (count * 100 - 200), // Fan out horizontally relative to expert
             y: currentExpertY + 150 // Below expert
           });
@@ -212,7 +214,47 @@ const App: React.FC = () => {
     }
   };
 
-  // 4. Synthesis Flow
+  // 4. Deep Dive Flow
+  const handleDeepDive = async (nodeId: string) => {
+    const node = nodes.find(n => n.id === nodeId);
+    const userNode = nodes.find(n => n.type === NodeType.USER_INPUT);
+    
+    if (!node || !userNode) return;
+
+    setIsProcessing(true);
+    setStatusMessage("Analyzing deep connection to your topic...");
+    
+    try {
+        const deepAnalysis = await generateDeepConnection(
+            userRole, 
+            userNode.content, // "Role's Topic: Actual Topic"
+            node.label,
+            node.content,
+            node.role || 'Expert'
+        );
+
+        // Update the node content by appending the deep dive
+        setNodes(prev => prev.map(n => {
+            if (n.id === nodeId) {
+                const updatedContent = n.content + "\n\n" + deepAnalysis;
+                // If selectedNode is this one, update it too immediately
+                if (selectedNode && selectedNode.id === nodeId) {
+                  setSelectedNode({ ...n, content: updatedContent, isDeepDived: true });
+                }
+                return { ...n, content: updatedContent, isDeepDived: true };
+            }
+            return n;
+        }));
+        
+        setStatusMessage("Deep analysis complete.");
+    } catch (e) {
+        setStatusMessage("Deep dive failed.");
+    } finally {
+        setIsProcessing(false);
+    }
+  };
+
+  // 5. Synthesis Flow
   const handleSynthesize = async () => {
     const principleNode = nodes.find(n => n.type === NodeType.GATEKEEPER);
     const selectedNodes = nodes.filter(n => n.selectedForRoadmap);
@@ -287,6 +329,8 @@ const App: React.FC = () => {
           node={selectedNode} 
           onClose={() => setSelectedNode(null)}
           onToggleSelection={toggleNodeSelection}
+          onDeepDive={handleDeepDive}
+          isProcessing={isProcessing}
         />
       )}
     </div>
