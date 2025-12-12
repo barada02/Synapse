@@ -18,6 +18,7 @@ const App: React.FC = () => {
   const [links, setLinks] = useState<LinkData[]>([]);
   const [selectedNode, setSelectedNode] = useState<NodeData | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isSynthesizing, setIsSynthesizing] = useState(false); // New specific state
   const [statusMessage, setStatusMessage] = useState('');
   const [connectionMode, setConnectionMode] = useState(false);
   const [resetKey, setResetKey] = useState(0);
@@ -58,6 +59,7 @@ const App: React.FC = () => {
     setLinks([]);
     setSelectedNode(null);
     setIsProcessing(false);
+    setIsSynthesizing(false);
     setStatusMessage('Session reset.');
     setConnectionMode(false);
     setUserRole('');
@@ -269,6 +271,7 @@ const App: React.FC = () => {
     }
 
     setIsProcessing(true);
+    setIsSynthesizing(true); // Start roadmap specific loading
     setStatusMessage('Synthesizing tailored Roadmap...');
 
     try {
@@ -291,6 +294,7 @@ const App: React.FC = () => {
       setStatusMessage('Error during synthesis.');
     } finally {
       setIsProcessing(false);
+      setIsSynthesizing(false); // End roadmap specific loading
     }
   };
 
@@ -308,6 +312,7 @@ const App: React.FC = () => {
         hasGatekeeper={hasGatekeeper}
         hasExperts={hasExperts}
         isProcessing={isProcessing}
+        isSynthesizing={isSynthesizing} // Pass the specific loading state
         statusMessage={statusMessage}
         availableExperts={availableExperts}
       />

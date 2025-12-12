@@ -11,6 +11,7 @@ interface SidebarProps {
   hasGatekeeper: boolean;
   hasExperts: boolean;
   isProcessing: boolean;
+  isSynthesizing: boolean; // New prop for specific loading state
   statusMessage: string;
   availableExperts: ExpertDefinition[];
 }
@@ -24,6 +25,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   hasGatekeeper,
   hasExperts,
   isProcessing,
+  isSynthesizing,
   statusMessage,
   availableExperts
 }) => {
@@ -186,7 +188,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             disabled={isProcessing}
             className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white py-3 px-4 rounded-md text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-purple-900/20 disabled:opacity-50"
           >
-            {isProcessing ? <Activity className="animate-spin" size={16}/> : <BrainCircuit size={16} />}
+            {isSynthesizing ? <Activity className="animate-spin" size={16}/> : <BrainCircuit size={16} />}
             Generate Roadmap
           </button>
         </section>
